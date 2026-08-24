@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PDG_VERSION: "1.2.2"
+  PDG_VERSION: "2.0.2"
 
 jobs:
   dump:
@@ -37,7 +37,7 @@ jobs:
       - name: Pasang payload-dumper-go
         run: |
           curl -fsSL -o /tmp/pdg.tar.gz \
-            "https://github.com/vm03/payload_dumper_go/releases/download/v${PDG_VERSION}/payload-dumper-go_${PDG_VERSION}_linux_amd64.tar.gz"
+            "https://github.com/ssut/payload-dumper-go/releases/download/${PDG_VERSION}/payload-dumper-go_${PDG_VERSION}_linux_amd64.tar.gz"
           tar -xzf /tmp/pdg.tar.gz -C /tmp payload-dumper-go
           sudo install /tmp/payload-dumper-go /usr/local/bin/payload-dumper-go
 
