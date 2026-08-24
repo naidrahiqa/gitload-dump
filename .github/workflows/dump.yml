@@ -44,7 +44,6 @@ jobs:
             "https://github.com/ssut/payload-dumper-go/releases/download/${PDG_VERSION}/payload-dumper-go_${PDG_VERSION}_linux_amd64.tar.gz"
           tar -xzf /tmp/pdg.tar.gz -C /tmp/
           sudo install -m 755 /tmp/payload-dumper-go /usr/local/bin/payload-dumper-go
-          payload-dumper-go --version
 
       - name: Download OTA
         id: dl
