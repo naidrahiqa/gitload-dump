@@ -1,0 +1,121 @@
+name: Dump OTA Payload
+
+on:
+  workflow_dispatch:
+    inputs:
+      ota_url:
+        description: "URL langsung ke file OTA (.zip berisi payload.bin)"
+        required: true
+        type: string
+      partitions:
+        description: "Partisi yang di-dump, pisah dengan koma (kosongkan = semua)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dump-${{ inputs.ota_url }}
+  cancel-in-progress: false
+
+env:
+  PDG_VERSION: "1.2.2"
+
+jobs:
+  dump:
+    name: Dump & publish ke Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Kosongkan disk biar lega
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Pasang payload-dumper-go
+        run: |
+          curl -fsSL -o /tmp/pdg.tar.gz \
+            "https://github.com/vm03/payload_dumper_go/releases/download/v${PDG_VERSION}/payload-dumper-go_${PDG_VERSION}_linux_amd64.tar.gz"
+          tar -xzf /tmp/pdg.tar.gz -C /tmp payload-dumper-go
+          sudo install /tmp/payload-dumper-go /usr/local/bin/payload-dumper-go
+
+      - name: Download OTA
+        id: dl
+        env:
+          OTA_URL: ${{ inputs.ota_url }}
+        run: |
+          FILENAME="$(basename "${OTA_URL%%\?*}")"
+          [[ "$FILENAME" == *.zip ]] || { echo "::error::URL harus mengarah ke file .zip"; exit 1; }
+
+          # Auto-detect device dari nama file (format: {device}-ota-{build}.zip)
+          DEVICE="${FILENAME%%-ota-*}"
+          DEVICE="${DEVICE// /_}"
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "device=$DEVICE" >> "$GITHUB_OUTPUT"
+          echo "Detected device: $DEVICE"
+
+          aria2c -x16 -s16 -k1M --file-allocation=none --console-log-level=warn \
+            -o "$FILENAME" "$OTA_URL" \
+            || { rm -f "$FILENAME"; curl -fL --retry 3 -o "$FILENAME" "$OTA_URL"; }
+          ls -lh "$FILENAME"
+
+      - name: Dump partisi
+        env:
+          FILENAME: ${{ steps.dl.outputs.filename }}
+          PARTITIONS: ${{ inputs.partitions }}
+        run: |
+          args=(-o out)
+          if [[ -n "${PARTITIONS// }" ]]; then
+            args+=(-p "${PARTITIONS// /}")
+          fi
+          args+=("$FILENAME")
+          payload-dumper-go "${args[@]}"
+          ls -lh out/
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FILENAME: ${{ steps.dl.outputs.filename }}
+          DEVICE: ${{ steps.dl.outputs.device }}
+          PARTITIONS: ${{ inputs.partitions }}
+          OTA_URL: ${{ inputs.ota_url }}
+        run: |
+          TAG="dump-${FILENAME%.*}"
+          TAG="${TAG// /_}"
+          BASE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+
+          {
+            echo "## ${DEVICE} — ${FILENAME}"
+            echo
+            echo "- **Device:** ${DEVICE}"
+            echo "- **Sumber:** $OTA_URL"
+            echo "- **Di-dump:** $(date -u '+%Y-%m-%d %H:%M UTC')"
+            if [[ -n "${PARTITIONS// }" ]]; then
+              echo "- **Partisi:** ${PARTITIONS// /}"
+            else
+              echo "- **Partisi:** semua"
+            fi
+            echo
+            echo "### File hasil dump"
+            echo
+            echo "| File | Ukuran |"
+            echo "| ---- | ------ |"
+            for f in out/*.img; do
+              n="$(basename "$f")"
+              s="$(du -h "$f" | cut -f1)"
+              echo "| [$n](${BASE}/releases/download/${TAG}/${n}) | \`${s}\` |"
+            done
+            echo
+            echo "> Dihasilkan otomatis lewat GitHub Actions."
+          } > notes.md
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/*.img --clobber
+          else
+            gh release create "$TAG" out/*.img \
+              --title "${DEVICE} — ${FILENAME}" \
+              --notes-file notes.md \
+              --latest
+          fi
