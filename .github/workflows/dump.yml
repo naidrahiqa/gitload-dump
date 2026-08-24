@@ -29,17 +29,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Kosongkan disk biar lega
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
           df -h /
 
-      - name: Pasang payload-dumper-go
+      - name: Install payload-dumper-go
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xz-utils
           curl -fsSL -o /tmp/pdg.tar.gz \
             "https://github.com/ssut/payload-dumper-go/releases/download/${PDG_VERSION}/payload-dumper-go_${PDG_VERSION}_linux_amd64.tar.gz"
           tar -xzf /tmp/pdg.tar.gz -C /tmp payload-dumper-go
-          sudo install /tmp/payload-dumper-go /usr/local/bin/payload-dumper-go
+          sudo install /tmp/pdg.tar.gz /usr/local/bin/payload-dumper-go
 
       - name: Download OTA
         id: dl
@@ -49,8 +53,14 @@ jobs:
           FILENAME="$(basename "${OTA_URL%%\?*}")"
           [[ "$FILENAME" == *.zip ]] || { echo "::error::URL harus mengarah ke file .zip"; exit 1; }
 
-          # Auto-detect device dari nama file (format: {device}-ota-{build}.zip)
-          DEVICE="${FILENAME%%-ota-*}"
+          DEVICE=""
+          if [[ "$FILENAME" == *-ota-* ]]; then
+            DEVICE="${FILENAME%%-ota-*}"
+          elif [[ "$FILENAME" == miui_*Global_* ]]; then
+            DEVICE="${FILENAME#miui_}"
+            DEVICE="${DEVICE%%Global_*}"
+          fi
+          DEVICE="${DEVICE:-${FILENAME%.*}}"
           DEVICE="${DEVICE// /_}"
           echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
           echo "device=$DEVICE" >> "$GITHUB_OUTPUT"
