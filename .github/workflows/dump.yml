@@ -96,6 +96,17 @@ jobs:
           TAG="${TAG// /_}"
           BASE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
 
+          SKIPPED=""
+          UPLOAD=""
+          for f in out/*.img; do
+            sz=$(stat -c%s "$f" 2>/dev/null || echo 0)
+            if [ "$sz" -gt 2147483648 ]; then
+              SKIPPED="${SKIPPED}\n- ❌ $(basename "$f") — $(du -h "$f" | cut -f1) (melebihi limit 2GB GitHub Release)"
+            else
+              UPLOAD="$UPLOAD $f"
+            fi
+          done
+
           {
             echo "## ${DEVICE} — ${FILENAME}"
             echo
@@ -117,14 +128,22 @@ jobs:
               s="$(du -h "$f" | cut -f1)"
               echo "| [$n](${BASE}/releases/download/${TAG}/${n}) | \`${s}\` |"
             done
+            if [ -n "$SKIPPED" ]; then
+              echo
+              echo "### File yang tidak di-upload (melebihi 2GB)"
+              echo -e "$SKIPPED"
+            fi
             echo
             echo "> Dihasilkan otomatis lewat GitHub Actions."
           } > notes.md
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" out/*.img --clobber
+          if [ -z "$UPLOAD" ]; then
+            echo "::warning::Tidak ada file yang bisa di-upload (< 2GB)"
+            gh release create "$TAG" --title "${DEVICE} — ${FILENAME}" --notes-file notes.md --latest
+          elif gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" $UPLOAD --clobber
           else
-            gh release create "$TAG" out/*.img \
+            gh release create "$TAG" $UPLOAD \
               --title "${DEVICE} — ${FILENAME}" \
               --notes-file notes.md \
               --latest
