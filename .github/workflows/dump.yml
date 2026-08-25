@@ -50,7 +50,9 @@ jobs:
         env:
           OTA_URL: ${{ inputs.ota_url }}
         run: |
-          FILENAME="$(basename "${OTA_URL%%\?*}")"
+          URL_PATH="${OTA_URL%%\?*}"
+          URL_PATH="${URL_PATH%/download}"
+          FILENAME="$(basename "$URL_PATH")"
           [[ "$FILENAME" == *.zip ]] || { echo "::error::URL harus mengarah ke file .zip"; exit 1; }
 
           DEVICE=""
@@ -59,6 +61,9 @@ jobs:
           elif [[ "$FILENAME" == miui_*Global_* ]]; then
             DEVICE="${FILENAME#miui_}"
             DEVICE="${DEVICE%%Global_*}"
+          elif [[ "$FILENAME" == lineage-*.zip ]]; then
+            DEVICE="${FILENAME%.zip}"
+            DEVICE="${DEVICE##*-}"
           fi
           DEVICE="${DEVICE:-${FILENAME%.*}}"
           DEVICE="${DEVICE// /_}"
